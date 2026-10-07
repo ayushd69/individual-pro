@@ -9,6 +9,33 @@ const roleNames = {
   'asset-manager': 'Asset Manager',
 }
 
+const navigation = [
+  { id: 'overview', label: 'Overview', icon: '▦', roles: Object.keys(roleNames) },
+  { id: 'tickets', label: 'Tickets', icon: '◎', roles: Object.keys(roleNames) },
+  { id: 'assets', label: 'Assets', icon: '⬡', roles: Object.keys(roleNames) },
+  { id: 'knowledge', label: 'Knowledge', icon: '▤', roles: Object.keys(roleNames) },
+  { id: 'people', label: 'People', icon: '♙', roles: ['system-admin'] },
+  { id: 'reports', label: 'Reports', icon: '▥', roles: ['system-admin', 'it-manager', 'asset-manager'] },
+  { id: 'notifications', label: 'Notifications', icon: '♧', roles: Object.keys(roleNames) },
+]
+
+const knowledgeArticles = [
+  { title: 'Connect securely to the company VPN', category: 'Network', readTime: '4 min', summary: 'Check your connection, sign in with your work account, and refresh your VPN profile.' },
+  { title: 'Prepare a laptop for repair', category: 'Hardware', readTime: '3 min', summary: 'Back up company files, record the asset tag, and submit a hardware support request.' },
+  { title: 'Request access to a business application', category: 'Access', readTime: '2 min', summary: 'Include the application name, your team, and the business reason in your request.' },
+  { title: 'Troubleshoot common Wi-Fi issues', category: 'Network', readTime: '5 min', summary: 'Reconnect to the approved network, restart Wi-Fi, and include your location when reporting issues.' },
+]
+
+const sectionContent = {
+  overview: { title: 'Overview', description: 'A live view of your service desk workspace.' },
+  tickets: { title: 'Tickets', description: 'Track, create, and update support requests.' },
+  assets: { title: 'Assets', description: 'Manage the equipment and devices in your organization.' },
+  knowledge: { title: 'Knowledge', description: 'Guides and answers for common support questions.' },
+  people: { title: 'People', description: 'Manage team accounts and access roles.' },
+  reports: { title: 'Reports', description: 'Service activity and inventory insights.' },
+  notifications: { title: 'Notifications', description: 'Recent updates from your service desk.' },
+}
+
 async function api(path, token, options = {}) {
   const response = await fetch(`/api${path}`, {
     ...options,
@@ -35,6 +62,15 @@ function App() {
   const [notice, setNotice] = useState('')
   const [activeForm, setActiveForm] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [activeSection, setActiveSection] = useState('overview')
+  const [search, setSearch] = useState('')
+  const [deletingUserId, setDeletingUserId] = useState('')
+
+  useEffect(() => {
+    if (!notice) return undefined
+    const timeoutId = window.setTimeout(() => setNotice(''), 4000)
+    return () => window.clearTimeout(timeoutId)
+  }, [notice])
 
   const loadWorkspace = useCallback(async (accessToken) => {
     const [me, overview, ticketResult, assetResult] = await Promise.all([
@@ -109,6 +145,8 @@ function App() {
     setAssets([])
     setUsers([])
     setActiveForm('')
+    setActiveSection('overview')
+    setSearch('')
     setNotice('')
   }
 
@@ -142,6 +180,38 @@ function App() {
       setNotice('Ticket status updated.')
     } catch (requestError) {
       setError(requestError.message)
+    }
+  }
+
+  async function updateAsset(assetId, status) {
+    setError('')
+    try {
+      await api(`/assets/${assetId}`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      })
+      await loadWorkspace(token)
+      setNotice('Asset lifecycle updated.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  async function deleteUser(member) {
+    const confirmed = window.confirm(`Delete the ${roleNames[member.role]} account for ${member.name} (${member.email})? This cannot be undone.`)
+    if (!confirmed) return
+
+    setError('')
+    setNotice('')
+    setDeletingUserId(member.id)
+    try {
+      await api(`/users/${member.id}`, token, { method: 'DELETE' })
+      await loadWorkspace(token)
+      setNotice(`${member.name}'s account was deleted.`)
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setDeletingUserId('')
     }
   }
 
@@ -189,48 +259,175 @@ function App() {
                 {!loading && <span aria-hidden="true">➤</span>}
               </button>
             </form>
-            <div className="auth-divider" />
-            <div className="role-selector">
-              <div className="role-selector-heading">
-                <span>AVAILABLE ROLES</span>
-                <small>Assigned by your administrator</small>
-              </div>
-              <div className="role-chips" aria-label="Available account roles">
-                {Object.values(roleNames).map((role) => <span key={role}>{role}</span>)}
-              </div>
-            </div>
           </section>
         </div>
       </main>
     )
   }
 
-  return (
-    <div className="app-layout">
-      <header className="app-header">
-        <a className="brand" href="#dashboard"><span className="brand-mark small-mark">SD</span> ServiceDesk<span>Pro</span></a>
-        <div className="account-menu">
-          <div className="account-details">
-            <strong>{user.name}</strong>
-            <span>{roleNames[user.role]}{user.department ? ` · ${user.department}` : ''}</span>
-          </div>
-          <button className="secondary-button" onClick={signOut} type="button">Sign out</button>
+  const visibleNavigation = navigation.filter((item) => item.roles.includes(user.role))
+  const currentSection = sectionContent[activeSection] || sectionContent.overview
+  const normalizedSearch = search.trim().toLowerCase()
+  const filteredTickets = tickets.filter((ticket) =>
+    [ticket.title, ticket.category, ticket.status, ticket.priority, ticket.requester?.name]
+      .some((value) => String(value || '').toLowerCase().includes(normalizedSearch)),
+  )
+  const filteredAssets = assets.filter((asset) =>
+    [asset.name, asset.assetTag, asset.category, asset.status, asset.assignedTo?.name]
+      .some((value) => String(value || '').toLowerCase().includes(normalizedSearch)),
+  )
+  const filteredUsers = users.filter((member) =>
+    [member.name, member.email, member.department, roleNames[member.role]]
+      .some((value) => String(value || '').toLowerCase().includes(normalizedSearch)),
+  )
+  const actionForm = activeSection === 'tickets' || activeSection === 'overview'
+    ? 'ticket'
+    : activeSection === 'assets'
+      ? 'asset'
+      : activeSection === 'people'
+        ? 'user'
+        : ''
+  const canAddAsset = ['system-admin', 'asset-manager'].includes(user.role)
+
+  function openCreateForm(form) {
+    setActiveForm(activeForm === form ? '' : form)
+  }
+
+  function renderTicketTable(rows) {
+    if (!rows.length) {
+      return <div className="workspace-empty"><span>◎</span><strong>No tickets found</strong><p>{normalizedSearch ? 'Try a different search.' : 'New support requests will appear here.'}</p></div>
+    }
+    return (
+      <div className="workspace-table-scroll">
+        <table className="workspace-table">
+          <thead><tr><th>Ticket</th><th>Requester</th><th>Category</th><th>Priority</th><th>Status</th></tr></thead>
+          <tbody>
+            {rows.map((ticket) => (
+              <tr key={ticket._id}>
+                <td><strong>{ticket.title}</strong><small>{ticket._id.slice(-8).toUpperCase()}</small></td>
+                <td>{ticket.requester?.name || 'You'}</td>
+                <td>{ticket.category}</td>
+                <td><span className={`priority-tag ${ticket.priority}`}>{ticket.priority}</span></td>
+                <td>
+                  <label className="status-control" aria-label={`Status for ${ticket.title}`}>
+                    <select
+                      value={ticket.status}
+                      disabled={user.role === 'employee' && ticket.status !== 'resolved'}
+                      onChange={(event) => updateTicket(ticket._id, event.target.value)}
+                    >
+                      {(user.role === 'employee'
+                        ? ticket.status === 'resolved' ? ['resolved', 'closed'] : [ticket.status]
+                        : ['open', 'in-progress', 'pending', 'resolved', 'closed']
+                      ).map((status) => <option key={status} value={status}>{status}</option>)}
+                    </select>
+                  </label>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  function renderAssetTable(rows) {
+    if (!rows.length) {
+      return <div className="workspace-empty"><span>⬡</span><strong>No assets found</strong><p>{normalizedSearch ? 'Try a different search.' : 'Registered assets will appear in this list.'}</p></div>
+    }
+    return (
+      <div className="workspace-table-scroll">
+        <table className="workspace-table asset-table">
+          <thead><tr><th>Asset ID</th><th>Name</th><th>Type</th><th>Serial / Tag</th><th>Status</th><th>Lifecycle</th></tr></thead>
+          <tbody>
+            {rows.map((asset) => (
+              <tr key={asset._id}>
+                <td>{asset.assetTag}</td>
+                <td><strong>{asset.name}</strong></td>
+                <td>{asset.category}</td>
+                <td>{asset.assetTag}</td>
+                <td><span className={`asset-status ${asset.status}`}>{asset.status}</span></td>
+                <td>
+                  <label className="status-control" aria-label={`Lifecycle for ${asset.name}`}>
+                    <select
+                      value={asset.status}
+                      disabled={!canAddAsset}
+                      onChange={(event) => updateAsset(asset._id, event.target.value)}
+                    >
+                      {['available', 'assigned', 'repair', 'retired'].map((status) => <option key={status} value={status}>{status}</option>)}
+                    </select>
+                  </label>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  function renderCreateForm() {
+    if (!activeForm) return null
+    const resource = activeForm === 'ticket' ? '/tickets' : activeForm === 'asset' ? '/assets' : '/users'
+    return (
+      <section className="form-card">
+        <div className="panel-header">
+          <h2>{activeForm === 'ticket' ? 'Create a support ticket' : activeForm === 'asset' ? 'Register an asset' : 'Create an account'}</h2>
+          <button className="text-button" onClick={() => setActiveForm('')} type="button">Close</button>
         </div>
-      </header>
+        <form className="data-form" onSubmit={(event) => handleCreate(event, resource)}>
+          {activeForm === 'ticket' && (
+            <>
+              <label>Title<input name="title" required maxLength="160" /></label>
+              <label>Category<select name="category"><option>General</option><option>Hardware</option><option>Software</option><option>Network</option><option>Asset</option></select></label>
+              <label>Priority<select name="priority"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></label>
+              <label className="wide-field">Description<textarea name="description" rows="3" required maxLength="5000" /></label>
+            </>
+          )}
+          {activeForm === 'asset' && (
+            <>
+              <label>Asset name<input name="name" required /></label>
+              <label>Asset tag<input name="assetTag" required /></label>
+              <label>Type / category<input name="category" placeholder="Laptop, monitor…" required /></label>
+              <label>Department<input name="department" /></label>
+              <label>Warranty until<input name="warrantyUntil" type="date" /></label>
+            </>
+          )}
+          {activeForm === 'user' && (
+            <>
+              <label>Full name<input name="name" required /></label>
+              <label>Email<input name="email" type="email" required /></label>
+              <label>Temporary password<input name="password" type="password" minLength="12" required /></label>
+              <label>Role<select name="role" required><option value="employee">Employee</option><option value="technician">Technician</option><option value="it-manager">IT Manager</option><option value="asset-manager">Asset Manager</option></select></label>
+              <label>Department<input name="department" /></label>
+            </>
+          )}
+          <div className="wide-field"><button className="primary-button" type="submit">Save</button></div>
+        </form>
+      </section>
+    )
+  }
 
-      <main id="dashboard" className="workspace">
-        <div className="welcome-row">
-          <div>
-            <p className="mini-label">{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-            <h1>{roleNames[user.role]} dashboard</h1>
-            <p className="muted-copy">Your service desk workspace and live operational data.</p>
-          </div>
-          <div className="health-chip"><span className="dot" /> API connected</div>
-        </div>
+  function renderAssets() {
+    return (
+      <section className="record-card workspace-record">
+        <div className="workspace-record-heading"><div><h2>Organization assets</h2><p>{filteredAssets.length} assets in this view</p></div></div>
+        {renderAssetTable(filteredAssets)}
+      </section>
+    )
+  }
 
-        {error && <div className="message error-message" role="alert">{error}</div>}
-        {notice && <div className="message success-message" role="status">{notice}</div>}
+  function renderTickets() {
+    return (
+      <section className="record-card workspace-record">
+        <div className="workspace-record-heading"><div><h2>Service requests</h2><p>{filteredTickets.length} tickets visible to your account</p></div></div>
+        {renderTicketTable(filteredTickets)}
+      </section>
+    )
+  }
 
+  function renderOverview() {
+    return (
+      <>
         <section className="metric-grid live-metrics" aria-label="Dashboard metrics">
           {(dashboard?.metrics || []).map((metric) => (
             <article className="metric-card" key={metric.label}>
@@ -238,118 +435,190 @@ function App() {
             </article>
           ))}
         </section>
-
-        <section className="workspace-toolbar">
-          <div><h2>Workspace</h2><p>Actions and records available to your role.</p></div>
-          <div className="toolbar-actions">
-            <button className="primary-button" onClick={() => setActiveForm(activeForm === 'ticket' ? '' : 'ticket')} type="button">+ New ticket</button>
-            {(user.role === 'asset-manager' || user.role === 'system-admin') && (
-              <button className="primary-button" onClick={() => setActiveForm(activeForm === 'asset' ? '' : 'asset')} type="button">+ Add asset</button>
-            )}
-            {user.role === 'system-admin' && (
-              <button className="secondary-button" onClick={() => setActiveForm(activeForm === 'user' ? '' : 'user')} type="button">+ Add user</button>
-            )}
-          </div>
-        </section>
-
-        {activeForm && (
-          <section className="form-card">
-            <div className="panel-header">
-              <h2>{activeForm === 'ticket' ? 'Create a support ticket' : activeForm === 'asset' ? 'Register an asset' : 'Create an account'}</h2>
-              <button className="text-button" onClick={() => setActiveForm('')} type="button">Close</button>
-            </div>
-            <form
-              className="data-form"
-              onSubmit={(event) => handleCreate(event, activeForm === 'ticket' ? '/tickets' : activeForm === 'asset' ? '/assets' : '/users')}
-            >
-              {activeForm === 'ticket' && (
-                <>
-                  <label>Title<input name="title" required maxLength="160" /></label>
-                  <label>Category<select name="category"><option>General</option><option>Hardware</option><option>Software</option><option>Network</option><option>Asset</option></select></label>
-                  <label>Priority<select name="priority"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></label>
-                  <label className="wide-field">Description<textarea name="description" rows="3" required maxLength="5000" /></label>
-                </>
-              )}
-              {activeForm === 'asset' && (
-                <>
-                  <label>Asset name<input name="name" required /></label>
-                  <label>Asset tag<input name="assetTag" required /></label>
-                  <label>Category<input name="category" placeholder="Laptop, monitor…" required /></label>
-                  <label>Department<input name="department" /></label>
-                  <label>Warranty until<input name="warrantyUntil" type="date" /></label>
-                </>
-              )}
-              {activeForm === 'user' && (
-                <>
-                  <label>Full name<input name="name" required /></label>
-                  <label>Email<input name="email" type="email" required /></label>
-                  <label>Temporary password<input name="password" type="password" minLength="12" required /></label>
-                  <label>Role<select name="role" required><option value="employee">Employee</option><option value="technician">Technician</option><option value="it-manager">IT Manager</option><option value="asset-manager">Asset Manager</option></select></label>
-                  <label>Department<input name="department" /></label>
-                </>
-              )}
-              <div className="wide-field"><button className="primary-button" type="submit">Save</button></div>
-            </form>
+        <div className="overview-grid">
+          <section className="record-card workspace-record">
+            <div className="workspace-record-heading"><div><h2>Recent tickets</h2><p>Latest service requests</p></div><button className="link-button" onClick={() => setActiveSection('tickets')} type="button">View all →</button></div>
+            {renderTicketTable(filteredTickets.slice(0, 5))}
           </section>
-        )}
-
-        <div className="records-grid">
-          <section className="record-card">
-            <div className="panel-header"><div><h2>Recent tickets</h2><p>{tickets.length} visible to your account</p></div><span className="record-count">{tickets.length}</span></div>
-            {tickets.length === 0 ? <p className="empty-state">No tickets yet. Create a ticket to get started.</p> : (
-              <div className="record-list">
-                {tickets.map((ticket) => (
-                  <article className="record-row" key={ticket._id}>
-                    <div className="record-title"><strong>{ticket.title}</strong><span>{ticket.category} · {ticket.requester?.name || 'You'}</span></div>
-                    <span className={`priority-tag ${ticket.priority}`}>{ticket.priority}</span>
-                    <label className="status-control" aria-label={`Status for ${ticket.title}`}>
-                      <select
-                        value={ticket.status}
-                        disabled={user.role === 'employee' && ticket.status !== 'resolved'}
-                        onChange={(event) => updateTicket(ticket._id, event.target.value)}
-                      >
-                        {(user.role === 'employee'
-                          ? ticket.status === 'resolved' ? ['resolved', 'closed'] : [ticket.status]
-                          : ['open', 'in-progress', 'pending', 'resolved', 'closed']
-                        ).map((status) => <option key={status} value={status}>{status}</option>)}
-                      </select>
-                    </label>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="record-card">
-            <div className="panel-header"><div><h2>Asset inventory</h2><p>Registered devices and equipment</p></div><span className="record-count">{assets.length}</span></div>
-            {assets.length === 0 ? <p className="empty-state">No assets have been registered.</p> : (
-              <div className="record-list">
-                {assets.slice(0, 8).map((asset) => (
-                  <article className="record-row asset-row" key={asset._id}>
-                    <div className="record-title"><strong>{asset.name}</strong><span>{asset.assetTag} · {asset.category}</span></div>
-                    <span className={`asset-status ${asset.status}`}>{asset.status}</span>
-                  </article>
-                ))}
-              </div>
-            )}
+          <section className="record-card workspace-record">
+            <div className="workspace-record-heading"><div><h2>Asset inventory</h2><p>{filteredAssets.length} records visible</p></div><button className="link-button" onClick={() => setActiveSection('assets')} type="button">View all →</button></div>
+            {renderAssetTable(filteredAssets.slice(0, 5))}
           </section>
         </div>
-
         {user.role === 'system-admin' && (
-          <section className="record-card admin-users">
-            <div className="panel-header"><div><h2>Team accounts</h2><p>Accounts and assigned roles</p></div><span className="record-count">{users.length}</span></div>
-            <div className="record-list">
-              {users.map((member) => (
-                <article className="record-row asset-row" key={member.id}>
-                  <div className="record-title"><strong>{member.name}</strong><span>{member.email}{member.department ? ` · ${member.department}` : ''}</span></div>
-                  <span className="asset-status assigned">{roleNames[member.role]}</span>
-                </article>
-              ))}
-            </div>
+          <section className="record-card workspace-record">
+            <div className="workspace-record-heading"><div><h2>Team accounts</h2><p>{filteredUsers.length} accounts and roles</p></div><button className="link-button" onClick={() => setActiveSection('people')} type="button">Manage people →</button></div>
+            {renderPeopleTable(filteredUsers.slice(0, 5))}
           </section>
         )}
-      </main>
-      <footer className="app-footer">ServiceDesk Pro <span>Secure access based on your assigned role.</span></footer>
+      </>
+    )
+  }
+
+  function renderPeopleTable(rows) {
+    if (!rows.length) return <div className="workspace-empty"><strong>No team accounts found</strong><p>Create a user account to get started.</p></div>
+    return (
+      <div className="workspace-table-scroll">
+        <table className="workspace-table">
+          <thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Role</th><th>Actions</th></tr></thead>
+          <tbody>{rows.map((member) => (
+            <tr key={member.id}>
+              <td><strong>{member.name}</strong></td>
+              <td>{member.email}</td>
+              <td>{member.department || '—'}</td>
+              <td><span className="role-label">{roleNames[member.role]}</span></td>
+              <td>
+                {member.role === 'system-admin'
+                  ? <span className="protected-account">Protected</span>
+                  : <button className="delete-user-button" type="button" disabled={deletingUserId === member.id} onClick={() => deleteUser(member)}>{deletingUserId === member.id ? 'Deleting…' : 'Delete'}</button>}
+              </td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    )
+  }
+
+  function renderKnowledge() {
+    const articles = knowledgeArticles.filter((article) =>
+      [article.title, article.category, article.summary].some((value) => value.toLowerCase().includes(normalizedSearch)),
+    )
+    return (
+      <div className="knowledge-grid">
+        {articles.map((article) => (
+          <article className="knowledge-card" key={article.title}>
+            <span className="knowledge-icon">▤</span>
+            <div className="knowledge-meta"><span>{article.category}</span><small>{article.readTime} read</small></div>
+            <h2>{article.title}</h2>
+            <p>{article.summary}</p>
+            <button type="button" className="link-button">Read guide <span>→</span></button>
+          </article>
+        ))}
+        {!articles.length && <p className="empty-state">No guides match your search.</p>}
+      </div>
+    )
+  }
+
+  function renderReports() {
+    const openTickets = tickets.filter((ticket) => ['open', 'in-progress', 'pending'].includes(ticket.status)).length
+    const resolvedTickets = tickets.filter((ticket) => ['resolved', 'closed'].includes(ticket.status)).length
+    const attentionAssets = assets.filter((asset) => ['repair', 'retired'].includes(asset.status)).length
+    return (
+      <div className="reports-grid">
+        <article className="report-card"><span>Ticket backlog</span><strong>{openTickets}</strong><small>Open and in progress</small><div className="report-meter"><span style={{ width: `${tickets.length ? Math.max(8, (openTickets / tickets.length) * 100) : 0}%` }} /></div></article>
+        <article className="report-card"><span>Resolved requests</span><strong>{resolvedTickets}</strong><small>Resolved or closed tickets</small><div className="report-meter green"><span style={{ width: `${tickets.length ? Math.max(8, (resolvedTickets / tickets.length) * 100) : 0}%` }} /></div></article>
+        <article className="report-card"><span>Assets requiring attention</span><strong>{attentionAssets}</strong><small>Repair or retired lifecycle</small><div className="report-meter amber"><span style={{ width: `${assets.length ? Math.max(8, (attentionAssets / assets.length) * 100) : 0}%` }} /></div></article>
+        <article className="report-card"><span>Tracked inventory</span><strong>{assets.length}</strong><small>Assets visible to your role</small><div className="report-meter purple"><span style={{ width: `${assets.length ? 100 : 0}%` }} /></div></article>
+      </div>
+    )
+  }
+
+  function renderNotifications() {
+    const recent = [...tickets]
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+      .filter((ticket) => [ticket.title, ticket.status, ticket.priority].some((value) => String(value || '').toLowerCase().includes(normalizedSearch)))
+    return (
+      <section className="record-card workspace-record">
+        <div className="workspace-record-heading"><div><h2>Ticket updates</h2><p>Recent activity for requests available to your role</p></div></div>
+        {!recent.length ? <div className="workspace-empty"><span>♧</span><strong>You’re all caught up</strong><p>Updates to your tickets will show here.</p></div> : (
+          <div className="activity-list">{recent.map((ticket) => (
+            <article className="activity-row" key={ticket._id}>
+              <span className="activity-mark">◎</span>
+              <div><strong>{ticket.title}</strong><p>Ticket is <b>{ticket.status}</b> · {ticket.priority} priority</p></div>
+              <time>{new Date(ticket.updatedAt).toLocaleDateString()}</time>
+            </article>
+          ))}</div>
+        )}
+      </section>
+    )
+  }
+
+  function renderSection() {
+    if (activeSection === 'overview') return renderOverview()
+    if (activeSection === 'tickets') return renderTickets()
+    if (activeSection === 'assets') return renderAssets()
+    if (activeSection === 'people' && user.role === 'system-admin') {
+      return <section className="record-card workspace-record"><div className="workspace-record-heading"><div><h2>Team accounts</h2><p>{filteredUsers.length} accounts and assigned roles</p></div></div>{renderPeopleTable(filteredUsers)}</section>
+    }
+    if (activeSection === 'knowledge') return renderKnowledge()
+    if (activeSection === 'reports' && ['system-admin', 'it-manager', 'asset-manager'].includes(user.role)) return renderReports()
+    if (activeSection === 'notifications') return renderNotifications()
+    return renderOverview()
+  }
+
+  return (
+    <div className="app-layout">
+      <aside className="side-navigation">
+        <a className="sidebar-brand" href="#overview">
+          <span className="brand-mark small-mark">SD</span>
+          <span className="sidebar-brand-copy"><strong>ServiceDesk Pro</strong><small>SERVICE OPERATIONS</small></span>
+        </a>
+        <div className="nav-label">WORKSPACE</div>
+        <nav className="workspace-navigation" aria-label="Workspace navigation">
+          {visibleNavigation.map((item) => (
+            <button
+              className={activeSection === item.id ? 'nav-item active' : 'nav-item'}
+              key={item.id}
+              type="button"
+              onClick={() => {
+                setActiveSection(item.id)
+                setActiveForm('')
+                setSearch('')
+              }}
+            >
+              <span className="nav-icon" aria-hidden="true">{item.icon}</span>
+              <span>{item.label}</span>
+              {item.id === 'tickets' && tickets.filter((ticket) => ['open', 'in-progress'].includes(ticket.status)).length > 0 && (
+                <span className="nav-count">{tickets.filter((ticket) => ['open', 'in-progress'].includes(ticket.status)).length}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="sidebar-profile">
+            <span className="profile-avatar">{user.name.charAt(0).toUpperCase()}</span>
+            <span className="sidebar-profile-copy"><strong>{user.name}</strong><small>{roleNames[user.role]}</small></span>
+            <button className="profile-menu-button" type="button" onClick={signOut} aria-label="Sign out">↗</button>
+          </div>
+        </div>
+      </aside>
+
+      <div className="workspace-frame">
+        <header className="workspace-topbar">
+          <div className="breadcrumb"><span>Workspace</span><b>/</b><strong>{currentSection.title}</strong></div>
+          <div className="topbar-tools">
+            <label className="workspace-search">
+              <span aria-hidden="true">⌕</span>
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${activeSection === 'overview' ? 'this view' : currentSection.title.toLowerCase()}`} aria-label={`Search ${currentSection.title}`} />
+              {search && <button type="button" onClick={() => setSearch('')} aria-label="Clear search">×</button>}
+            </label>
+            <button className="topbar-icon-button" type="button" onClick={() => setActiveSection('notifications')} aria-label="Notifications">♧</button>
+            <span className="topbar-divider" />
+            <button className="topbar-avatar" type="button" title={`${user.name} · ${roleNames[user.role]}`}>{user.name.charAt(0).toUpperCase()}</button>
+          </div>
+        </header>
+
+        <main className="workspace-content">
+          {error && <div className="message error-message" role="alert">{error}</div>}
+          {notice && <div className="message success-message" role="status">{notice}</div>}
+          <section className="section-heading">
+            <div><p className="mini-label">SERVICE MANAGEMENT</p><h1>{currentSection.title}</h1><p>{activeSection === 'overview' ? `${roleNames[user.role]} · ${user.department || 'Service operations'}` : currentSection.description}</p></div>
+            <div className="section-actions">
+              {activeSection === 'tickets' && <button className="primary-button" onClick={() => openCreateForm('ticket')} type="button"><span>＋</span> New Ticket</button>}
+              {activeSection === 'assets' && canAddAsset && <button className="primary-button" onClick={() => openCreateForm('asset')} type="button"><span>＋</span> Add Asset</button>}
+              {activeSection === 'people' && user.role === 'system-admin' && <button className="primary-button" onClick={() => openCreateForm('user')} type="button"><span>＋</span> Add User</button>}
+              {activeSection === 'overview' && (
+                <>
+                  <span className="health-chip"><span className="dot" /> Connected</span>
+                  <button className="primary-button" onClick={() => openCreateForm('ticket')} type="button"><span>＋</span> New Ticket</button>
+                </>
+              )}
+            </div>
+          </section>
+          {renderCreateForm()}
+          {renderSection()}
+        </main>
+      </div>
     </div>
   )
 }

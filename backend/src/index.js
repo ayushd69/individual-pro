@@ -208,6 +208,29 @@ app.post(
   }),
 )
 
+app.delete(
+  '/api/users/:id',
+  authenticate,
+  allowRoles('system-admin'),
+  asyncRoute(async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return fail(res, 400, 'Invalid user ID')
+    if (req.params.id === req.user.id) return fail(res, 400, 'You cannot delete your own administrator account')
+
+    const user = await User.findById(req.params.id)
+    if (!user) return fail(res, 404, 'User not found')
+    if (user.role === 'system-admin') return fail(res, 403, 'The system administrator account cannot be deleted')
+
+    await writeAudit(req.user.id, 'user.deleted', 'user', user.id)
+    await Promise.all([
+      Ticket.updateMany({ requester: user._id }, { $set: { requester: null } }),
+      Ticket.updateMany({ assignee: user._id }, { $set: { assignee: null } }),
+      Asset.updateMany({ assignedTo: user._id }, { $set: { assignedTo: null } }),
+      User.deleteOne({ _id: user._id }),
+    ])
+    res.json({ message: 'User account deleted' })
+  }),
+)
+
 app.get(
   '/api/tickets',
   authenticate,
