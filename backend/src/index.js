@@ -422,7 +422,7 @@ async function bootstrapAdmin() {
   if (!ADMIN_NAME || !ADMIN_EMAIL || !ADMIN_PASSWORD) {
     throw new Error('Set ADMIN_NAME, ADMIN_EMAIL, and ADMIN_PASSWORD to create the initial administrator')
   }
-  if (ADMIN_PASSWORD.length < 12) throw new Error('ADMIN_PASSWORD must be at least 12 characters')
+  if (ADMIN_PASSWORD.length < 10) throw new Error('ADMIN_PASSWORD must be at least 10 characters')
 
   await User.create({
     name: ADMIN_NAME,

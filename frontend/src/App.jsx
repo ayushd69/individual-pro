@@ -34,6 +34,7 @@ function App() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [activeForm, setActiveForm] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
 
   const loadWorkspace = useCallback(async (accessToken) => {
     const [me, overview, ticketResult, assetResult] = await Promise.all([
@@ -151,21 +152,55 @@ function App() {
   if (!user) {
     return (
       <main className="auth-screen">
-        <section className="auth-card">
-          <div className="brand-mark">SD</div>
-          <p className="mini-label">ServiceDesk Pro</p>
-          <h1>Welcome back</h1>
-          <p className="auth-subtitle">Sign in with your organization account to open your role dashboard.</p>
-          {error && <div className="message error-message" role="alert">{error}</div>}
-          <form className="form-stack" onSubmit={handleLogin}>
-            <label>Email address<input type="email" name="email" autoComplete="username" required /></label>
-            <label>Password<input type="password" name="password" autoComplete="current-password" required /></label>
-            <button className="primary-button" type="submit" disabled={loading}>
-              {loading ? 'Signing in…' : 'Sign in'}
-            </button>
-          </form>
-          <p className="auth-footnote">Accounts are provisioned by your System Admin.</p>
-        </section>
+        <div className="login-page">
+          <section className="login-story">
+            <div className="story-copy">
+              <span className="story-kicker"><span className="story-kicker-dot" /> SERVICE MANAGEMENT</span>
+              <h1>Support that keeps your<br className="desktop-break" /> team moving.</h1>
+              <p>A clear place for service requests, incident response, and the assets your team relies on.</p>
+            </div>
+            <div className="story-benefits">
+              <span><span className="benefit-icon">✓</span> Connected service operations</span>
+              <span><span className="benefit-icon shield-icon">◇</span> Role-aware access</span>
+            </div>
+          </section>
+
+          <section className="auth-card" id="signin">
+            <div className="auth-heading">
+              <p className="mini-label">WELCOME BACK</p>
+              <h2>Sign in to your workspace</h2>
+              <p className="auth-subtitle">Use your work account to continue.</p>
+            </div>
+            {error && <div className="message error-message" role="alert">{error}</div>}
+            <form className="form-stack" onSubmit={handleLogin}>
+              <label>Work email
+                <input type="email" name="email" autoComplete="username" placeholder="employee@servicedesk.com" required />
+              </label>
+              <label>Password
+                <span className="password-input-wrap">
+                  <input type={showPassword ? 'text' : 'password'} name="password" autoComplete="current-password" placeholder="Enter your password" required />
+                  <button className="password-toggle" type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </span>
+              </label>
+              <button className="primary-button login-submit" type="submit" disabled={loading}>
+                {loading ? 'Signing in…' : 'Sign in'}
+                {!loading && <span aria-hidden="true">➤</span>}
+              </button>
+            </form>
+            <div className="auth-divider" />
+            <div className="role-selector">
+              <div className="role-selector-heading">
+                <span>AVAILABLE ROLES</span>
+                <small>Assigned by your administrator</small>
+              </div>
+              <div className="role-chips" aria-label="Available account roles">
+                {Object.values(roleNames).map((role) => <span key={role}>{role}</span>)}
+              </div>
+            </div>
+          </section>
+        </div>
       </main>
     )
   }

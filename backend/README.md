@@ -4,7 +4,7 @@
 
 1. Install Node.js 20.19+ (or 22.12+) and start MongoDB locally, or create a MongoDB Atlas database.
 2. From `backend`, install dependencies with `npm install`.
-3. Copy `.env.example` to `.env` and set `MONGODB_URI`, a random `JWT_SECRET` of at least 32 characters, and a strong `ADMIN_PASSWORD` of at least 12 characters.
+3. Copy `.env.example` to `.env` and set `MONGODB_URI`, a random `JWT_SECRET` of at least 32 characters, and an `ADMIN_PASSWORD` of at least 10 characters. Use a unique, stronger password for any non-local deployment.
 4. Start the API with `npm run dev`.
 5. In a second terminal, run `npm install` and `npm run dev` from `frontend`.
 
