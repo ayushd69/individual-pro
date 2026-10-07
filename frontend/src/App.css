@@ -2094,6 +2094,32 @@
   color: #50676e;
 }
 
+.asset-request-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.asset-request-action select {
+  max-width: 210px;
+  padding: 8px 10px;
+  border: 1px solid #dce5e4;
+  border-radius: 6px;
+  background: #fff;
+  color: #496068;
+  font-size: 0.75rem;
+}
+
+.asset-request-action button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.asset-request-state {
+  color: #71848a;
+  font-size: 0.75rem;
+}
+
 .asset-table th,
 .asset-table td {
   padding-right: 22px;

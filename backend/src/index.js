@@ -234,7 +234,12 @@ function ticketFilterFor(user) {
 
 function assetFilterFor(user) {
   if (user.role === 'employee' || user.role === 'technician') {
-    return { assignedTo: new mongoose.Types.ObjectId(user.id) }
+    return {
+      $or: [
+        { status: 'available' },
+        { assignedTo: new mongoose.Types.ObjectId(user.id) },
+      ],
+    }
   }
   return {}
 }

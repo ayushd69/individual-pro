@@ -14,6 +14,8 @@ Vite proxies `/api` requests to the backend. There are no built-in demo credenti
 
 Ticket categories include general, software, network, and hardware item categories. Asset types include laptops, desktops, monitors, printers, network equipment, chargers, CPUs, mice, keyboards, headsets, and docking stations.
 
+Available inventory appears in the Assets list for employees and technicians; they also see assets assigned to their own account.
+
 ## API
 
 - `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/logout`

@@ -541,30 +541,66 @@ function App() {
     return (
       <div className="workspace-table-scroll">
         <table className="workspace-table">
-          <thead><tr><th>Ticket</th><th>Requester</th><th>Category</th><th>Priority</th><th>Status</th></tr></thead>
+          <thead><tr><th>Ticket</th><th>Requester</th><th>Category</th><th>Priority</th><th>Status</th>{user.role === 'technician' && <th>Request asset</th>}</tr></thead>
           <tbody>
-            {rows.map((ticket) => (
-              <tr key={ticket._id}>
-                <td><strong>{ticket.title}</strong><small>{ticket._id.slice(-8).toUpperCase()}</small></td>
-                <td>{ticket.requester?.name || 'You'}</td>
-                <td>{ticket.category}</td>
-                <td><span className={`priority-tag ${ticket.priority}`}>{ticket.priority}</span></td>
-                <td>
-                  <label className="status-control" aria-label={`Status for ${ticket.title}`}>
-                    <select
-                      value={ticket.status}
-                      disabled={user.role === 'employee' && ticket.status !== 'resolved'}
-                      onChange={(event) => updateTicket(ticket._id, event.target.value)}
-                    >
-                      {(user.role === 'employee'
-                        ? ticket.status === 'resolved' ? ['resolved', 'closed'] : [ticket.status]
-                        : ['open', 'in-progress', 'pending', 'resolved', 'closed']
-                      ).map((status) => <option key={status} value={status}>{status}</option>)}
-                    </select>
-                  </label>
-                </td>
-              </tr>
-            ))}
+            {rows.map((ticket) => {
+              const activeAssetRequest = assetRequests.find((request) =>
+                String(request.ticket?._id || request.ticket) === ticket._id
+                && ['pending', 'approved', 'issued'].includes(request.status),
+              )
+              const canRequestAsset = user.role === 'technician'
+                && String(ticket.assignee?._id || ticket.assignee) === user.id
+                && ['assigned', 'in-progress', 'pending-asset'].includes(ticket.status)
+                && !activeAssetRequest
+
+              return (
+                <tr key={ticket._id}>
+                  <td><strong>{ticket.title}</strong><small>{ticket._id.slice(-8).toUpperCase()}</small></td>
+                  <td>{ticket.requester?.name || 'You'}</td>
+                  <td>{ticket.category}</td>
+                  <td><span className={`priority-tag ${ticket.priority}`}>{ticket.priority}</span></td>
+                  <td>
+                    <label className="status-control" aria-label={`Status for ${ticket.title}`}>
+                      <select
+                        value={ticket.status}
+                        disabled={user.role === 'employee' && ticket.status !== 'resolved'}
+                        onChange={(event) => updateTicket(ticket._id, event.target.value)}
+                      >
+                        {(user.role === 'employee'
+                          ? ticket.status === 'resolved' ? ['resolved', 'closed'] : [ticket.status]
+                          : ['open', 'in-progress', 'pending', 'resolved', 'closed']
+                        ).map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                    </label>
+                  </td>
+                  {user.role === 'technician' && (
+                    <td>
+                      {activeAssetRequest
+                        ? <span className="asset-request-state">{activeAssetRequest.status === 'issued' ? 'Asset issued' : `Request ${activeAssetRequest.status}`}</span>
+                        : canRequestAsset
+                          ? availableAssets.length
+                            ? (
+                            <div className="asset-request-action">
+                              <select
+                                aria-label={`Available asset for ${ticket.title}`}
+                                value={assetSelection[ticket._id] || ''}
+                                onChange={(event) => setAssetSelection((current) => ({ ...current, [ticket._id]: event.target.value }))}
+                              >
+                                <option value="">Choose asset</option>
+                                {availableAssets.map((asset) => (
+                                  <option key={asset._id} value={asset._id}>{asset.name} ({asset.assetTag})</option>
+                                ))}
+                              </select>
+                              <button className="link-button" onClick={() => requestAsset(ticket)} type="button">Request</button>
+                            </div>
+                          )
+                            : <span className="asset-request-state">No available assets</span>
+                          : <span className="asset-request-state">Accept assignment first</span>}
+                    </td>
+                  )}
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
