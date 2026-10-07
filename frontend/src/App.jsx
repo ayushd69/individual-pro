@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { io } from 'socket.io-client'
 import './App.css'
 
 const roleNames = {
@@ -37,10 +38,11 @@ const sectionContent = {
 }
 
 async function api(path, token, options = {}) {
+  const isMultipart = options.body instanceof FormData
   const response = await fetch(`/api${path}`, {
     ...options,
     headers: {
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.body && !isMultipart ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
@@ -56,6 +58,13 @@ function App() {
   const [dashboard, setDashboard] = useState(null)
   const [tickets, setTickets] = useState([])
   const [assets, setAssets] = useState([])
+  const [availableAssets, setAvailableAssets] = useState([])
+  const [assetRequests, setAssetRequests] = useState([])
+  const [notifications, setNotifications] = useState([])
+  const [technicians, setTechnicians] = useState([])
+  const [articles, setArticles] = useState([])
+  const [slas, setSlas] = useState([])
+  const [vendors, setVendors] = useState([])
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -65,6 +74,14 @@ function App() {
   const [activeSection, setActiveSection] = useState('overview')
   const [search, setSearch] = useState('')
   const [deletingUserId, setDeletingUserId] = useState('')
+  const [chatTicket, setChatTicket] = useState(null)
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatDraft, setChatDraft] = useState('')
+  const [chatBusy, setChatBusy] = useState(false)
+  const [assignmentIds, setAssignmentIds] = useState({})
+  const [assetSelection, setAssetSelection] = useState({})
+  const [workLogTicket, setWorkLogTicket] = useState(null)
+  const [requestReasons, setRequestReasons] = useState({})
 
   useEffect(() => {
     if (!notice) return undefined
@@ -73,19 +90,52 @@ function App() {
   }, [notice])
 
   const loadWorkspace = useCallback(async (accessToken) => {
-    const [me, overview, ticketResult, assetResult] = await Promise.all([
+    const [me, overview, ticketResult, assetResult, notificationResult, articleResult] = await Promise.all([
       api('/auth/me', accessToken),
       api('/dashboard', accessToken),
       api('/tickets', accessToken),
       api('/assets', accessToken),
+      api('/notifications', accessToken),
+      api('/knowledge', accessToken),
     ])
     setUser(me.user)
     setDashboard(overview)
     setTickets(ticketResult.tickets)
     setAssets(assetResult.assets)
+    setNotifications(notificationResult.notifications)
+    setArticles(articleResult.articles)
+    if (['system-admin', 'it-manager', 'technician', 'asset-manager'].includes(me.user.role)) {
+      const requestResult = await api('/asset-requests', accessToken)
+      setAssetRequests(requestResult.requests)
+    } else {
+      setAssetRequests([])
+    }
+    if (me.user.role === 'technician') {
+      const availableResult = await api('/assets/available', accessToken)
+      setAvailableAssets(availableResult.assets)
+    } else {
+      setAvailableAssets([])
+    }
     if (me.user.role === 'system-admin') {
       const userResult = await api('/users', accessToken)
       setUsers(userResult.users)
+    } else {
+      setUsers([])
+    }
+    if (['system-admin', 'it-manager'].includes(me.user.role)) {
+      const technicianResult = await api('/technicians', accessToken)
+      setTechnicians(technicianResult.technicians)
+      const slaResult = await api('/slas', accessToken)
+      setSlas(slaResult.slas)
+    } else {
+      setTechnicians([])
+      setSlas([])
+    }
+    if (['system-admin', 'asset-manager', 'it-manager'].includes(me.user.role)) {
+      const vendorResult = await api('/vendors', accessToken)
+      setVendors(vendorResult.vendors)
+    } else {
+      setVendors([])
     }
   }, [])
 
@@ -111,6 +161,46 @@ function App() {
       mounted = false
     }
   }, [token, loadWorkspace])
+
+  useEffect(() => {
+    if (!token) return undefined
+    const socket = io({ auth: { token } })
+    socket.on('notification:new', (notification) => {
+      setNotifications((current) => [notification, ...current.filter((item) => item._id !== notification._id)])
+    })
+    socket.on('ticket:updated', () => {
+      loadWorkspace(token).catch((loadError) => setError(loadError.message))
+    })
+    socket.on('ticket:message', (message) => {
+      setChatMessages((current) => current.some((item) => item._id === message._id) ? current : [...current, message])
+    })
+    socket.on('ticket:internal-message', (message) => {
+      setChatMessages((current) => current.some((item) => item._id === message._id) ? current : [...current, message])
+    })
+    return () => socket.disconnect()
+  }, [token, loadWorkspace])
+
+  useEffect(() => {
+    if (!chatTicket || !token) return undefined
+    let mounted = true
+    const socket = io({ auth: { token } })
+    setChatMessages([])
+    api(`/tickets/${chatTicket._id}/messages`, token)
+      .then(({ messages }) => { if (mounted) setChatMessages(messages) })
+      .catch((loadError) => { if (mounted) setError(loadError.message) })
+    socket.on('connect', () => socket.emit('ticket:join', { ticketId: chatTicket._id }))
+    socket.on('ticket:message', (message) => {
+      if (mounted && message.ticket === chatTicket._id) {
+        setChatMessages((current) => current.some((item) => item._id === message._id) ? current : [...current, message])
+      }
+    })
+    socket.on('ticket:internal-message', (message) => {
+      if (mounted && message.ticket === chatTicket._id) {
+        setChatMessages((current) => current.some((item) => item._id === message._id) ? current : [...current, message])
+      }
+    })
+    return () => { mounted = false; socket.disconnect() }
+  }, [chatTicket, token])
 
   async function handleLogin(event) {
     event.preventDefault()
@@ -157,9 +247,16 @@ function App() {
     setNotice('')
     const form = new FormData(formElement)
     const values = Object.fromEntries(form.entries())
+    const attachments = formElement.elements.attachments?.files
+    delete values.attachments
     if (!values.warrantyUntil) delete values.warrantyUntil
     try {
-      await api(resource, token, { method: 'POST', body: JSON.stringify(values) })
+      const result = await api(resource, token, { method: 'POST', body: JSON.stringify(values) })
+      if (resource === '/tickets' && attachments?.length) {
+        const files = new FormData()
+        for (const file of attachments) files.append('files', file)
+        await api(`/tickets/${result.ticket._id}/attachments`, token, { method: 'POST', body: files })
+      }
       await loadWorkspace(token)
       formElement.reset()
       setActiveForm('')
@@ -192,6 +289,147 @@ function App() {
       })
       await loadWorkspace(token)
       setNotice('Asset lifecycle updated.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  async function assignTicket(ticket) {
+    const technicianId = assignmentIds[ticket._id]
+    if (!technicianId) return setError('Select a technician before assigning the ticket')
+    setError('')
+    try {
+      await api(`/tickets/${ticket._id}/assignments`, token, {
+        method: 'POST',
+        body: JSON.stringify({ technicianId }),
+      })
+      await loadWorkspace(token)
+      setNotice('Assignment approval request sent to the technician.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  async function respondToAssignment(ticket, decision) {
+    const assignmentResult = await api(`/tickets/${ticket._id}/assignments`, token)
+    const assignment = assignmentResult.assignments.find((item) => item.current && item.status === 'pending')
+    if (!assignment) return setError('This assignment is no longer awaiting your response')
+    const reason = decision === 'reject' ? window.prompt('Please provide a reason for rejecting this assignment:') : ''
+    if (decision === 'reject' && !reason?.trim()) return
+    setError('')
+    try {
+      await api(`/tickets/${ticket._id}/assignments/${assignment._id}`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ decision, ...(reason ? { reason } : {}) }),
+      })
+      await loadWorkspace(token)
+      setNotice(decision === 'accept' ? 'Assignment accepted. You can now begin work.' : 'Assignment rejected and the manager was notified.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  async function requestAsset(ticket) {
+    const assetId = assetSelection[ticket._id]
+    if (!assetId) return setError('Choose an available asset to request')
+    setError('')
+    try {
+      await api(`/tickets/${ticket._id}/asset-requests`, token, {
+        method: 'POST',
+        body: JSON.stringify({ assetId }),
+      })
+      await loadWorkspace(token)
+      setNotice('Asset request sent to the Asset Manager.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  async function reviewAssetRequest(request, decision) {
+    const reason = decision === 'reject' ? window.prompt('Please provide a reason for rejecting this asset request:') : ''
+    if (decision === 'reject' && !reason?.trim()) return
+    setError('')
+    try {
+      await api(`/asset-requests/${request._id}/review`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ decision, ...(reason ? { reason } : {}) }),
+      })
+      await loadWorkspace(token)
+      setNotice(decision === 'approve' ? 'Request approved. Issue the asset to complete approval.' : 'Request rejected and technician notified.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  async function issueAsset(request) {
+    setError('')
+    try {
+      await api(`/asset-requests/${request._id}/issue`, token, {
+        method: 'POST',
+        body: JSON.stringify({ condition: 'Issued in good condition' }),
+      })
+      await loadWorkspace(token)
+      setNotice('Asset issued and ticket returned to In Progress.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  async function returnAsset(request) {
+    const condition = window.prompt('Describe the asset condition on return:')
+    if (!condition?.trim()) return
+    setError('')
+    try {
+      await api(`/asset-requests/${request._id}/return`, token, {
+        method: 'POST',
+        body: JSON.stringify({ condition }),
+      })
+      await loadWorkspace(token)
+      setNotice('Asset returned and marked available.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  async function sendChatMessage(event) {
+    event.preventDefault()
+    if (!chatTicket || !chatDraft.trim()) return
+    setChatBusy(true)
+    setError('')
+    try {
+      const { message } = await api(`/tickets/${chatTicket._id}/messages`, token, {
+        method: 'POST',
+        body: JSON.stringify({ body: chatDraft.trim() }),
+      })
+      setChatMessages((current) => current.some((item) => item._id === message._id) ? current : [...current, message])
+      setChatDraft('')
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setChatBusy(false)
+    }
+  }
+
+  async function addWorkLog(event) {
+    event.preventDefault()
+    if (!workLogTicket) return
+    const form = new FormData(event.currentTarget)
+    try {
+      await api(`/tickets/${workLogTicket._id}/work-logs`, token, {
+        method: 'POST',
+        body: JSON.stringify({ minutes: Number(form.get('minutes')), note: form.get('note') }),
+      })
+      setWorkLogTicket(null)
+      setNotice('Work log recorded.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  async function markNotificationsRead() {
+    try {
+      await api('/notifications/read-all', token, { method: 'PATCH', body: '{}' })
+      setNotifications((items) => items.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })))
     } catch (requestError) {
       setError(requestError.message)
     }
