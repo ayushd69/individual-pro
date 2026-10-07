@@ -10,6 +10,9 @@ const roleNames = {
   'asset-manager': 'Asset Manager',
 }
 
+const ticketCategories = ['General', 'Hardware', 'Laptop', 'Charger', 'Mouse', 'CPU', 'Keyboard', 'Monitor', 'Printer', 'Software', 'Network', 'Asset']
+const assetTypes = ['laptop', 'desktop', 'monitor', 'printer', 'router', 'server', 'mobile', 'software-license', 'charger', 'cpu', 'mouse', 'keyboard', 'headset', 'docking-station', 'other']
+
 const navigation = [
   { id: 'overview', label: 'Overview', icon: '▦', roles: Object.keys(roleNames) },
   { id: 'tickets', label: 'Tickets', icon: '◎', roles: Object.keys(roleNames) },
@@ -616,7 +619,7 @@ function App() {
           {activeForm === 'ticket' && (
             <>
               <label>Title<input name="title" required maxLength="160" /></label>
-              <label>Category<select name="category"><option>General</option><option>Hardware</option><option>Software</option><option>Network</option><option>Asset</option></select></label>
+              <label>Category<select name="category">{ticketCategories.map((category) => <option key={category}>{category}</option>)}</select></label>
               <label>Priority<select name="priority"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></label>
               <label className="wide-field">Description<textarea name="description" rows="3" required maxLength="5000" /></label>
             </>
@@ -625,7 +628,7 @@ function App() {
             <>
               <label>Asset name<input name="name" required /></label>
               <label>Asset tag<input name="assetTag" required /></label>
-              <label>Type / category<input name="category" placeholder="Laptop, monitor…" required /></label>
+              <label>Type / category<select name="category" required>{assetTypes.map((type) => <option key={type} value={type}>{type === 'cpu' ? 'CPU' : type.split('-').map((part) => part[0].toUpperCase() + part.slice(1)).join(' ')}</option>)}</select></label>
               <label>Department<input name="department" /></label>
               <label>Warranty until<input name="warrantyUntil" type="date" /></label>
             </>

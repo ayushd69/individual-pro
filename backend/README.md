@@ -12,6 +12,8 @@ The server listens on `http://localhost:4000`. `GET /api/health` reports API and
 
 Vite proxies `/api` requests to the backend. There are no built-in demo credentials: sign in with the administrator name, email, and password configured in `backend/.env`. The admin dashboard can provision users for the other roles.
 
+Ticket categories include general, software, network, and hardware item categories. Asset types include laptops, desktops, monitors, printers, network equipment, chargers, CPUs, mice, keyboards, headsets, and docking stations.
+
 ## API
 
 - `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/logout`

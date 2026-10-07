@@ -17,7 +17,8 @@ const roles = ['system-admin', 'it-manager', 'technician', 'employee', 'asset-ma
 const ticketStatuses = ['open', 'pending-technician-approval', 'assigned', 'in-progress', 'pending-asset', 'resolved', 'employee-confirmation', 'closed', 'reopened']
 const priorities = ['low', 'medium', 'high', 'critical']
 const assetStatuses = ['available', 'assigned', 'repair', 'lost', 'damaged', 'retired']
-const assetTypes = ['laptop', 'desktop', 'monitor', 'printer', 'router', 'server', 'mobile', 'software-license', 'charger', 'other']
+const assetTypes = ['laptop', 'desktop', 'monitor', 'printer', 'router', 'server', 'mobile', 'software-license', 'charger', 'cpu', 'mouse', 'keyboard', 'headset', 'docking-station', 'other']
+const assetTicketCategories = ['Hardware', 'Asset', 'Laptop', 'Charger', 'Mouse', 'CPU', 'Keyboard', 'Monitor', 'Printer']
 const server = createServer()
 const app = express()
 const io = new Server(server, { cors: { origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' } })
@@ -226,7 +227,7 @@ function safeUser(user) {
 function ticketFilterFor(user) {
   if (user.role === 'employee') return { requester: new mongoose.Types.ObjectId(user.id) }
   if (user.role === 'technician') return { assignee: new mongoose.Types.ObjectId(user.id) }
-  if (user.role === 'asset-manager') return { category: { $in: ['Hardware', 'Asset'] } }
+  if (user.role === 'asset-manager') return { category: { $in: assetTicketCategories } }
   if (user.role === 'it-manager' && user.department) return { department: user.department }
   return {}
 }
@@ -327,7 +328,7 @@ async function getTicketForUser(ticketId, user) {
   if (['system-admin', 'it-manager'].includes(user.role)) return ticket
   if (user.role === 'employee' && String(ticket.requester) === user.id) return ticket
   if (user.role === 'technician' && (String(ticket.assignee) === user.id || await TicketAssignment.exists({ ticket: ticket.id, technician: user.id, current: true }))) return ticket
-  if (user.role === 'asset-manager' && ['Hardware', 'Asset'].includes(ticket.category)) return ticket
+  if (user.role === 'asset-manager' && assetTicketCategories.includes(ticket.category)) return ticket
   return false
 }
 
@@ -733,7 +734,7 @@ app.patch(
     if (req.user.role === 'technician' && String(ticket.assignee) !== req.user.id) {
       return fail(res, 403, 'You can only update tickets assigned to you')
     }
-    if (req.user.role === 'asset-manager' && !['Hardware', 'Asset'].includes(ticket.category)) {
+    if (req.user.role === 'asset-manager' && !assetTicketCategories.includes(ticket.category)) {
       return fail(res, 403, 'Asset managers can only update hardware or asset tickets')
     }
     if (req.user.role === 'it-manager' && req.user.department && ticket.department !== req.user.department) {
